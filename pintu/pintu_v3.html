@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+	<head>
+		<title>拼图</title>
+		<meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+		<script src="jquery.min.js"></script>
+		<script type="text/javascript" defer="defer">
+			var piece = function () {
+				return {
+					pi : 0,
+					pj : 0,
+					i : 0,
+					j : 0,
+					ref : null
+				};
+			};
+			// 方向 上右下左
+			var ARROWS = {
+				U : 0,
+				R : 1,
+				D : 2,
+				L : 3
+			};
+			var game = {
+				// 加载的图像
+				pic: null,
+				row: 0,
+				col: 0,
+				// 图形碎片列表
+				piece: [],
+				panel: null,
+				bg: null,
+				si : 0,
+				sj : 0,
+				w : 0,
+				h : 0,
+				// 图像的url
+				url : null,
+				stepCount : 0,
+				isFinish : false,
+				// 动画用
+				playList : null,
+				// 播放动画延时的句柄
+				timerHandler : 0,
+				load : function () {
+					// 如果当前在播放动画，则停止
+					clearTimeout(this.timerHandler);
+					this.panel = $("#panel")[0];
+					this.bg = $("#cover");
+					this.pic = new Image();
+					this.pic.src = this.url || $("#path")[0].placeholder;
+					this.pic.onload = this.init.bind(this);
+				},
+				move : function (o) {
+					var check1 = (o.j == this.sj) && (Math.abs(o.i - this.si) == 1),
+					    check2 = (o.i == this.si) && (Math.abs(o.j - this.sj) == 1);
+
+					if (check1 || check2) {
+						$(o.ref).css({
+							"left" : this.si * this.w + "px",
+							"top" : this.sj * this.h + "px"
+						});
+						$(o.ref).removeClass("up");
+						$(o.ref).removeClass("down");
+						$(o.ref).removeClass("left");
+						$(o.ref).removeClass("right");
+						if (check1 && o.i - this.si > 0) {
+							$(o.ref).addClass("left");
+						} else if (check1 && o.i - this.si < 0) {
+							$(o.ref).addClass("right");
+						} else if (check2 && o.j - this.sj > 0) {
+							$(o.ref).addClass("up");
+						} else if (check2 && o.j - this.sj < 0) {
+							$(o.ref).addClass("down");
+						}
+						
+						o.i = o.i ^ this.si;
+						o.j = o.j ^ this.sj;
+						this.si = o.i ^ this.si;
+						this.sj = o.j ^ this.sj;
+						o.i = o.i ^ this.si;
+						o.j = o.j ^ this.sj;
+						this.stepCount += 1;
+					}
+				},
+				check : function () {
+					for (var i = 0, l = this.piece.length; i < l ; i ++) {
+						var o = this.piece[i];
+						if (o.i != o.pi || o.j != o.pj) {
+							return false;
+						}
+					}
+					return true;
+				},
+				init : function () {
+					this.stepCount = 0;
+					this.isFinish = false;
+					$(".piece").remove();
+					this.col = +$("#col").val();
+					this.row = +$("#row").val();
+					this.piece = [];
+					this.space = this.col * this.row - 1;
+					this.w = this.pic.naturalWidth / this.col;
+					this.h = this.pic.naturalHeight / this.row;
+					this.si = this.col - 1;
+					this.sj = this.row - 1;
+					this.playList = null;
+
+					var doc = document.createDocumentFragment(),
+						list = [];
+					this.bg.css({
+						"width" : this.pic.naturalWidth,
+						"height" : this.pic.naturalHeight,
+						"background-image" : "url(" + this.pic.src + ")"
+					});
+					for (var i = 0; i < this.col; i++) {
+						for (var j = 0; j < this.row; j++) {
+							var p = document.createElement("div");
+							$(p).addClass("piece");
+							$(p).addClass("piece_hover");
+							$(p).css({
+								"width" : this.w,
+								"height" : this.h,
+								"background-image" : "url(" + this.pic.src + ")",
+								"background-position-x" :  - i * this.w + "px",
+								"background-position-y" :  - j * this.h + "px"
+							});
+							var o = piece();
+							o.ref = p;
+							o.pi = i;
+							o.pj = j;
+							list.push(o);
+						}
+					}
+					list.pop();
+					// 随机 + 有效性验证
+					// 图形A与图形B等价的充要条件图形A的排列的逆序数的奇偶性等于图形B的排列的逆序数的奇偶性。
+					var c;
+					do {
+						c = 0;
+						list.sort(function() {
+							return 0.5 - Math.random();
+						});
+						for (var i = list.length; i; i --) {
+							for (var j = i; j; j --) {
+								var a = list[i - 1], 
+									b = list[j - 1];
+								// 逆序数
+								if (a.pj * this.col + a.pi < b.pj * this.col + b.pi) {
+									c ++;
+								}
+							}
+						}
+						if (c == 0) {
+							// 如果没有逆序数，说明随机后和原图一样。
+							c ++;
+						}
+					} while (c % 2 != 0);
+					for(var i = 0; i < this.col; i++) {
+						for(var j = 0; j < this.row; j++) {
+							var o = list[i + j * this.col];
+							if (!!o) {
+								o.i = i;
+								o.j = j;
+								this.piece.push(o);
+								$(o.ref).css({
+									"left" : i  * this.w + "px",
+									"top" : j * this.h + "px"
+								});
+								$(o.ref).click(this.click.bind(this,o));
+
+								doc.appendChild(o.ref);
+							}
+						}
+					}
+					this.panel.appendChild(doc);
+				},
+
+				click : function (o) {
+					if (this.isFinish) return false;
+					this.move(o);
+					if (this.check()) {
+						this.finish();
+					}
+				},
+
+				auto : function () {
+					// 播放中途再点击无效
+					if (!!this.playList) return;
+
+					var status = new Array(this.col * this.row);
+					for (var i in this.piece) {
+						var o = this.piece[i];
+						status[o.pi + o.pj * this.col] = o.i + o.j * this.col + 1;
+					}
+					status[this.col * this.row - 1] = this.si + this.sj * this.col + 1;
+					console.log("当前状态： " + status);
+					var arrList = this.search(status, this.col, this.row);
+					console.log("结论： " + arrList);
+
+					// 自动完成
+					if (typeof arrList == "string") {
+						alert("Error.");
+						return;
+					}
+					// 禁用事件
+					$(".piece").unbind();
+					this.playList = arrList;
+					this.autoPlay();
+				},
+
+				autoPlay : function () {
+					// 播放中途点击再开时，中断
+					if (!this.playList) return;
+
+					var arr = this.playList.shift();
+					var mi = this.si, mj = this.sj;
+					var p = null;
+					if (arr == ARROWS.U) {
+						mj --;
+					} else if (arr == ARROWS.R) {
+						mi ++;
+					} else if (arr == ARROWS.D) {
+						mj ++;
+					} else if (arr == ARROWS.L) {
+						mi --;
+					}
+					for (var i = 0, l = this.piece.length; i < l ; i ++) {
+						var o = this.piece[i];
+						if (o.i == mi && o.j == mj) {
+							p = o;
+							break;
+						}
+					}
+					this.click(p);
+
+					if (this.playList.length > 0) {
+						this.timerHandler = setTimeout(this.autoPlay.bind(this), 400);
+					}
+				},
+
+				finish : function () {
+					// alert("Finish. Step:" + this.stepCount);
+					this.isFinish = true;
+					var p = document.createElement("div");
+					$(p).addClass("piece");
+					$(p).css({
+						"width" : this.w,
+						"height" : this.h,
+						"background-image" : "url(" + this.pic.src + ")",
+						"background-position-x" :  (- this.col + 1) * this.w + "px",
+						"background-position-y" :  (- this.row + 1) * this.h + "px",
+						"left" : this.space % this.col * this.w + "px",
+						"top" : Math.floor(this.space / this.col) * this.h + "px"
+					});
+					this.panel.appendChild(p);
+					$(".piece_hover").removeClass("piece_hover");
+				},
+
+				// A * 检索算法
+				search : function (status, col, row) {
+					console.time(1);
+					// 每一步的对象
+					var Step = function (status, count, parent, arrow, col, row) {
+						// 当前的状态
+						this.status = status;
+						// ID
+						this.id = "";
+						// 当前的cost数
+						this.cost = 0;
+						// 当前的步数
+						this.count = count;
+						// 上一步
+						this.parent = parent;
+						// 上一步移动方式
+						this.arrow = arrow;
+						this.row = row;
+						this.col = col;
+						// 刷新cost值 & ID
+						this.refresh = function () {
+							if (this.id == "") {
+								for (var i = 0; i < this.status.length; i ++) {
+									this.id += this.status[i];
+								}
+							}
+							// Cost 估算
+							this.cost = this.count;
+							var c = 0;
+							// 1 基于错位数估计 
+							// for (var i = 0; i < this.status.length; i ++) {
+							// 	if (this.status[i] != i + 1) {
+							// 		c++;
+							// 	}
+							// }
+							// this.cost += c;
+							// 2 基于目前位置与目标位置的估计
+							for (var i = 0; i < this.status.length; i ++) {
+						    	c += Math.abs(this.status[i] - i - 1) % this.col 
+						    		+ Math.floor(Math.abs(this.status[i] - i - 1) / this.col);
+							}
+							this.cost += c * 4;
+						}
+					};
+					
+					// 初始检索深度
+					var DEPTH = 50;
+					// 已生成而未考察的节点
+					var openList = {};
+					var openIndex = [];
+					// 已处理过的节点的list
+					var closeList = {};
+					// 深度超出预估的list
+					var waitList = [];
+
+					// 取得列表中cost最小的节点
+					var getMinCostStep = function (arr) {
+						var obj = arr[0].cost,
+							index = 0;
+						for (var i = 0, l = arr.length; i < l; i ++) {
+							var point = arr[i];
+							if (point.cost < obj) {
+								obj = point.cost;
+								index = i;
+							}
+						}
+						return index;
+					};
+					var getSurroundSteps = function (cur, count, col, row) {
+						var surrList = [];
+						var lastNum = col * row - 1;
+						// 可以移动的方块位置
+						var blockNum = cur.status[lastNum];
+						// 四个方向去检索子节点
+						// 上
+						if (cur.arrow != ARROWS.D) {
+							// 检测是否为第一行
+							if (blockNum > col) {
+								var newStep = createNewStep(cur.status, count, cur, ARROWS.U, blockNum - col, lastNum, col, row);
+								surrList.push(newStep);
+							}
+						}
+						// 右
+						if (cur.arrow != ARROWS.L) {
+							// 检测是否为最后一列
+							if (blockNum % col != 0) {
+								var newStep = createNewStep(cur.status, count, cur, ARROWS.R, blockNum + 1, lastNum, col, row);
+								surrList.push(newStep);
+							}
+						}
+						// 下
+						if (cur.arrow != ARROWS.U) {
+							// 检测是否为最后一行
+							if (blockNum <= lastNum - col) {
+								var newStep = createNewStep(cur.status, count, cur, ARROWS.D, blockNum + col, lastNum, col, row);
+								surrList.push(newStep);
+							}
+						}
+						// 左
+						if (cur.arrow != ARROWS.R) {
+							// 检测是否为第一列
+							if (blockNum % col != 1) {
+								var newStep = createNewStep(cur.status, count, cur, ARROWS.L, blockNum - 1, lastNum, col, row);
+								surrList.push(newStep);
+							}
+						}
+						return surrList;
+					};
+					var createNewStep = function (status, count, cur, arrow, move, lastNum, col, row) {
+						var newStep = new Step(cloneStatus(status), count, cur, arrow, col, row);
+						var newStatus = newStep.status;
+						// 需要交换的节点
+						var moveTarget = getKey(newStatus, move);
+						newStatus[moveTarget] = newStatus[moveTarget] ^ newStatus[lastNum];
+						newStatus[lastNum] = newStatus[moveTarget] ^ newStatus[lastNum];
+						newStatus[moveTarget] = newStatus[moveTarget] ^ newStatus[lastNum];
+						newStep.refresh();
+						return newStep;
+					};
+					var getKey = function (status, val) {
+						for (var i = 0; i < status.length; i ++) {
+							if (status[i] == val) {
+								return i;
+							}
+						}
+						console.error("GetKey err.");
+						return 0;
+					};
+					var cloneStatus = function (status) {
+						var newobj = [];
+						for(var i in status) {
+							newobj.push(status[i]);
+						}
+						return newobj;
+					}
+					var isTarget = function (obj) {
+						for (var i = 0; i < obj.status.length; i ++) {
+							if (obj.status[i] != i + 1) {
+								return false;
+							}
+						}
+						return true;
+					}
+					// 当前状态压入open
+					var firstStep = new Step(status, 0, null, null, col, row);
+					firstStep.refresh();
+					openList[firstStep.id] = firstStep;
+					openList.length = 1;
+					openIndex.push(firstStep);
+					var cur = null;
+					while (openList.length > 0 || waitList.length > 0) {
+						if (openList.length == 0) {
+							for (var i = 0, l = waitList.length; i < l; i ++) {
+								openList[waitList[i].id] = waitList[i];
+							}
+							openIndex = openIndex.concat(waitList);
+							DEPTH = DEPTH + 20;
+							console.log("Info:深度扩容");
+						}
+						// 从OPEN表中取估价值f(n)最小的节点n
+						index = getMinCostStep(openIndex);
+						cur = openIndex[index];
+						// 当前节点是目标节点，检索完了
+						if (isTarget(cur)) {
+							break;
+						}
+						openIndex.splice(index, 1);
+						delete openList[cur.id];
+						openList.length --;
+				        // 遍历它相邻的点
+						var surroundPoints = getSurroundSteps(cur, cur.count + 1, col, row);
+						for (var i = 0, l = surroundPoints.length; i < l; i ++) {
+							var point = surroundPoints[i],
+								exists = null;
+							if (closeList.hasOwnProperty(point.id)) {
+								// 已处理过的节点
+								continue;
+							} else if (openList.hasOwnProperty(point.id)) {
+								exists = openList[point.id];
+								// 需要更新的节点
+								if (point.cost < exists.cost) {
+									// 修改exists的父节点为当前的父节点
+									exists.count = point.count;
+									exists.parent = point.parent;
+									exists.arrow = point.arrow;
+									exists.refresh();
+								}
+							} else {
+								// 第一次处理的节点
+								if (point.count < DEPTH) {
+									openList[point.id] = point;
+									openList.length ++;
+									openIndex.push(point);
+								} else {
+									waitList.push(point);
+								}
+							}
+				        }
+						// 将当前节点插入CLOSE表中;
+						closeList[cur.id] = cur;
+					}
+
+					if (openList.length == 0) {
+						// no result
+						console.log("open:" + openList.length);
+						console.log("close:" + closeList.length);
+						console.timeEnd(1);
+						return "No result";
+					} else {
+						var result = [];
+						var temp = cur;
+						// 逆向还原动作
+						while (temp.parent) {
+							result.unshift(temp.arrow);
+							temp = temp.parent;
+						}
+						console.log("openList.length:" + openList.length);
+						console.log("stepCount:" + result.length);
+						console.timeEnd(1);
+						return result;
+					}
+				},
+
+				test : function () {
+					// var status = [2, 4, 3, 1, 5, 6] ;
+					// var s = this.search(status, 3, 2);
+					// var status = [5, 1, 8, 4, 6, 7, 3, 2, 9]  ;
+					// var status = [1, 4, 8, 2, 5, 7, 3, 6, 9] ;
+					var status = [8, 4, 7, 3, 5, 2, 1, 6, 9] ;
+					var s = this.search(status, 3, 3);
+					console.log(s);
+				}
+			};
+
+			function getFileUrl(obj) {
+		    	var url;
+		    	if (navigator.userAgent.indexOf("Chrome") > 0) { // Chrome 
+		    		game.url = window.URL.createObjectURL(obj.files.item(0));
+		    		url = obj.files.item(0).name;
+		    	} else {
+		    		url = game.url = obj.value;
+		    	}
+		    	return url;
+		    }
+		    function difficulty(str) {
+		    	switch (str) {
+		    		case "2" : return "简单";
+		    		case "3" : return "普通";
+		    		case "4" : return "困难";
+		    		case "5" : return "大师";
+		    		case "6" : return "噩梦";
+		    		case "7" : return "地狱";
+		    		case "8" : return "炼狱";
+		    	}
+		    }
+			$(document).ready(function() {
+				$("#start").on("click", function () {
+					game.load();
+					if (+$("#col").val() <= 3 && +$("#row").val() <= 3) {
+						$("#auto").show();
+					} else {
+						$("#auto").hide();
+					}
+				});
+				$("#auto").on("click", game.auto.bind(game));
+				// 滑动条联动
+				$("#col").on("change", function() {
+					var diff = difficulty(this.value);
+					$("#colv").text(diff);
+					if(!$("#con")[0].checked) {
+						$("#row").val(this.value);
+						$("#rowv").text(diff);
+					}
+				});
+				$("#row").on("change", function() {
+					var diff = difficulty(this.value);
+					$("#rowv").text(diff);
+					if(!$("#con")[0].checked) {
+						$("#col").val(this.value);
+						$("#colv").text(diff);
+					}
+				});
+
+				// 模拟上传控件
+				$("#picfile").on("change", function() {
+					var url = getFileUrl(this);
+					$("#path").val(url);
+				});
+
+				// 网络图片的预加载
+				$("#path").on("change", function() {
+					var p = new Image();
+					p.src = this.value;
+				});
+
+				// 高级模式
+				$("#con").on("change", function() {
+					if (this.checked) {
+						$(".hd").css({ visibility: "visible"});
+					} else {
+						$(".hd").css({ visibility: "hidden"});
+					}
+				});
+			});
+		</script>
+		<style>
+			p, label, ul, li { font-size: 12px; margin: 0; padding: 0;}
+			fieldset {
+				max-width: 600px;
+				height: 130px;
+				margin: 0 auto;
+				padding-left: 10px;
+			}
+			legend { font-size: 14px;}
+			p {margin-top: 2px;}
+			ul {list-style: none; padding-left: 10px}
+			li {margin-bottom: 1px}
+			label {width:60px; display: inline-block;}
+			.fr {
+				float: right;
+				position: relative;
+				z-index: 999;
+				cursor: pointer;
+				padding : 1px;
+				border-radius : 1em;
+				border : 0;
+			}
+			.start {
+				height: 50px;
+				width: 50px;
+				margin-top: 10px;
+				margin-right: 10px;
+			}
+			.auto {
+				height: 20px;
+				width: 50px;
+				margin-right: 10px;
+				display:none;
+			}
+			.panel{
+				position : relative;
+				margin: 30px auto 0 auto;
+				display: table;
+				box-shadow: 2px 2px 10px #909090;
+			}
+			.cover{
+				background-repeat: no-repeat;
+				opacity : 0.2;
+				position : relative;
+			}
+			.piece{position : absolute;z-index : 1;}
+			.piece_hover:hover {
+				box-shadow: 0px 0px 5px 5px black; 
+				z-index : 2;
+			}
+			.range {
+				padding : 0;
+				width : 200px;
+				height: 12px;
+			}
+			.hd {visibility: hidden;}
+
+			/* 滑动效果 */
+			.up { animation: 0.1s move_up; -webkit-animation: 0.1s move_up; }
+			.down { animation: 0.1s move_down; -webkit-animation: 0.1s move_down; }
+			.left { animation: 0.1s move_left; -webkit-animation: 0.1s move_left; }
+			.right { animation: 0.1s move_right -webkit-animation: 0.1s move_right; }
+			@keyframes move_up { 0% { transform: translate(0%,100%);} to { transform: translate(0%,0%);}}
+			@keyframes move_down { 0% { transform: translate(0%,-100%);} to { transform: translate(0%,0%);}}
+			@keyframes move_left { 0% { transform: translate(100%);} to { transform: translate(0%);}}
+			@keyframes move_right { 0% { transform: translate(-100%);} to { transform: translate(0%);}}
+			@-webkit-keyframes move_up { 0% { -webkit-transform: translate(0%,100%);} to { -webkit-transform: translate(0%,0%);}}
+			@-webkit-keyframes move_down {0% {-webkit-transform: translate(0%,-100%);} to { -webkit-transform: translate(0%,0%);}}
+			@-webkit-keyframes move_left { 0% { -webkit-transform: translate(100%);} to { -webkit-transform: translate(0%);}}
+			@-webkit-keyframes move_right { 0% { -webkit-transform: translate(-100%);} to { -webkit-transform: translate(0%);}}
+			
+			/* 模拟上传控件 */
+			.upload {position: relative; }
+			.path {border:1px solid #cdcdcd; width:350px;}
+			.ml_3 {margin-left: -3px;}
+			.selectBtn { background-color:#FFF; border:1px solid #CDCDCD; width:70px;}
+			.picfile{ position:absolute; left : 60px; opacity: 0; width:70px; cursor: pointer;}
+		</style>
+	</head>
+	<body>
+		<fieldset>
+			<legend>拼图设置</legend>
+			<button id="start" class="start fr">GO!</button>
+			<p>图片来源：</p>
+			<ul>
+				<li>
+					<label>图像URL：</label>
+					<input type='text' id='path' class='path ml_3' placeholder="sample.jpg"/>
+				</li>  
+		    	<li class="upload">
+		    		<label>或者</label><input type='button' class='selectBtn' value='点击上传'/>
+					<input type="file" id="picfile" class="picfile" accept="image/*"/>
+				</li>
+			</ul>
+			<p>难度：</p>
+			<button id="auto" class="auto fr">自动</button>
+			<ul>
+				<li>
+					<label class="hd">列数：</label>
+					<input type="range" id="col" value="3" min="2" max="8" class="range ml_3"/>
+					<label id="colv">普通</label>
+					<input type="checkbox" id="con">高级</input>
+				</li>  
+		    	<li class="hd">
+					<label>行数：</label>
+					<input type="range" id="row" value="3" min="2" max="8" class="range ml_3"/>
+					<label id="rowv">普通</label>
+				</li>
+			</ul>
+		</fieldset>
+		<div id="panel" class = "panel">
+			<div id="cover" class="cover"></div>
+		</div>
+	</body>
+</html>
